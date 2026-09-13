@@ -13,6 +13,37 @@ Waystone grows from concrete learning and engineering work. Prefer a small, runn
 
 A meaningful experiment should normally explain its purpose, build command, run command, expected result, conclusion, dependencies, and platform support. Non-trivial C or C++ modules should prefer CMake and should be independently buildable when practical.
 
+## Engineering Profiles
+
+Choose the lowest profile that honestly matches the module's current promise. Each profile includes the expectations above it:
+
+| Profile | Minimum promise |
+|---|---|
+| `experiment` | Runs reproducibly and records its purpose, result, and limits. |
+| `learning-example` | Teaches a focused idea without production abstractions obscuring it. |
+| `reusable-library` | Defines its API, ownership, error model, tests, dependencies, compatibility, and platform support. |
+| `foundational-component` | Also examines applicable lifetime and value semantics, failure guarantees, invalidation, complexity, boundary cases, and extension constraints. |
+
+Before designing or reviewing a module, identify its relevant characteristics rather than applying every concern mechanically. Containers and value types may require lifetime, copy/move, allocator, invalidation, and complexity analysis. Concurrent code may require thread-safety boundaries, shutdown, races, blocking, cancellation, and memory-order analysis. System resources, protocols, and platform adapters bring their own ownership, partial-failure, input, state, timeout, error-mapping, and native-semantics concerns.
+
+Analyze credible future changes, but do not implement abstractions for unspecified possibilities. Prefer an existing solution, the standard library, or a direct design. A design pattern is a candidate tool only when a current constraint or a concrete expected change justifies it.
+
+## Library Boundaries
+
+Treat each `libraries/<name>` module as `standalone` by default: it should be possible to configure, build, and test it independently without repository-root paths. Mark a library `composed` when its purpose is to combine lower-level libraries. Dependencies must remain explicit, shallow, and one-way; demos may depend on libraries, but libraries must not depend on demos.
+
+Prefer small local duplication over a premature `common` or `utils` dependency. Keep implementation and third-party types out of public interfaces when practical, and do not propagate build dependencies as `PUBLIC` when `PRIVATE` is sufficient. PImpl is one possible remedy for a demonstrated interface leak, not a default requirement.
+
+A library README should identify required, optional, and internal Waystone dependencies, its portability, and whether it is `standalone` or `composed`. Add namespaced build targets, extraction tests, dependency levels, package-manager support, or dependency graphs only when real consumers or growing dependencies require them.
+
+## Module Contracts and Maintenance
+
+Document applicable guarantees and non-goals. Compatibility is an explicit promise: experiments and learning examples may change freely; reusable libraries should state their source/API compatibility expectations; ABI stability is not implied.
+
+When useful, record whether a module is `experimental`, `maintained`, `stable`, or `archived`, together with its last verified platform and toolchain. Archived work may retain learning value without promising ongoing support.
+
+For third-party code, record its source, license, and local modifications. For code that handles untrusted input or persistent user data, consider validation, size and resource limits, overflow, partial failure, cancellation, and corruption according to the actual risk. Introduce release policy, SemVer, CI matrices, ABI policy, packaging, and similar machinery only when a real module needs them.
+
 ## Portability
 
 Every non-trivial module should declare one support level:
