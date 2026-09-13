@@ -1,0 +1,31 @@
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Build output
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+
+# Test and coverage output
+Testing/
+coverage/
+*.gcda
+*.gcno
+
+# Python tooling
+__pycache__/
+*.py[cod]
+.venv/
+
+# Temporary files
+*.log
+*.tmp
