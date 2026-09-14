@@ -25,4 +25,4 @@ For documentation structure, see [docs/README.md](docs/README.md). For contribut
 
 ## Current Status
 
-The repository is at its foundation stage. Its initial conventions are documented before the first experiment or reusable component is added.
+The repository now contains its first reusable component: the portable, fixed-capacity [ring buffer](libraries/ring_buffer/README.md). Additional directories and indexes will appear only when real content needs them.
