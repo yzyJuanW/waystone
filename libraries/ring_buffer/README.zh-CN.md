@@ -63,4 +63,4 @@ target_link_libraries(my_app PRIVATE waystone::ring_buffer)
 
 ## 非目标
 
-本实现不提供线程安全或 lock-free 保证，也不支持动态容量、满容量覆盖、allocator、iterator、随机访问、安装规则或 package 配置。未来变体应按 `spsc_ring_buffer` 等真实语义命名，而不是笼统称为“高级版”。
+本实现不提供线程安全或 lock-free 保证，也不支持动态容量、满容量覆盖、allocator、iterator、随机访问、安装规则或 package 配置。

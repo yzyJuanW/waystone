@@ -63,4 +63,4 @@ The module is header-only. When built as the top-level CMake project, it also bu
 
 ## Non-goals
 
-This implementation is not thread-safe or lock-free. It does not provide dynamic capacity, overwrite-on-full behavior, allocators, iterators, random access, installation rules, or package configuration. Future variants should be named for their real semantics, such as `spsc_ring_buffer`, rather than called “advanced.”
+This implementation is not thread-safe or lock-free. It does not provide dynamic capacity, overwrite-on-full behavior, allocators, iterators, random access, installation rules, or package configuration.
