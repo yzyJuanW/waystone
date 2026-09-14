@@ -9,229 +9,230 @@
 #include <utility>
 
 enum class EventKind {
-    construct,
-    copy_construct,
-    move_construct,
-    copy_assign,
-    move_assign,
-    destroy,
-    constructor_body,
-    caught,
+  kConstruct,
+  kCopyConstruct,
+  kMoveConstruct,
+  kCopyAssign,
+  kMoveAssign,
+  kDestroy,
+  kConstructorBody,
+  kCaught,
 };
 
 struct Event {
-    EventKind kind;
-    std::string_view object;
-    std::string_view related{};
+  EventKind kind;
+  std::string_view object;
+  std::string_view related{};
 
-    bool operator==(const Event&) const = default;
+  bool operator==(const Event&) const = default;
 };
 
 class EventLog {
-public:
-    void record(Event event) noexcept {
-        if (size_ == events_.size()) {
-            std::terminate();
-        }
-        events_[size_++] = event;
-    }
+ public:
+  void Record(Event event) noexcept {
+    if (size_ == events_.size()) std::terminate();
+    events_[size_++] = event;
+  }
 
-    [[nodiscard]] std::span<const Event> events() const noexcept {
-        return {events_.data(), size_};
-    }
+  [[nodiscard]] std::span<const Event> Events() const noexcept {
+    return {events_.data(), size_};
+  }
 
-private:
-    std::array<Event, 32> events_{};
-    std::size_t size_{};
+ private:
+  std::array<Event, 32> events_{};
+  std::size_t size_{};
 };
 
 class Tracer {
-public:
-    Tracer(EventLog& log, std::string_view name) noexcept : log_(log), name_(name) {
-        log_.record({EventKind::construct, name_});
-    }
+ public:
+  Tracer(EventLog& log, std::string_view name) noexcept : log_(log), name_(name) {
+    log_.Record({EventKind::kConstruct, name_});
+  }
 
-    Tracer(const Tracer& other, std::string_view name = "copy") noexcept
-        : log_(other.log_), name_(name) {
-        log_.record({EventKind::copy_construct, name_, other.name_});
-    }
+  Tracer(const Tracer& other, std::string_view name = "copy") noexcept
+      : log_(other.log_), name_(name) {
+    log_.Record({EventKind::kCopyConstruct, name_, other.name_});
+  }
 
-    Tracer(Tracer&& other, std::string_view name = "moved") noexcept
-        : log_(other.log_), name_(name) {
-        log_.record({EventKind::move_construct, name_, other.name_});
-        other.moved_from_ = true;
-    }
+  Tracer(Tracer&& other, std::string_view name = "moved") noexcept
+      : log_(other.log_), name_(name) {
+    log_.Record({EventKind::kMoveConstruct, name_, other.name_});
+    other.moved_from_ = true;
+  }
 
-    Tracer& operator=(const Tracer& other) noexcept {
-        log_.record({EventKind::copy_assign, name_, other.name_});
-        moved_from_ = false;
-        return *this;
-    }
+  Tracer& operator=(const Tracer& other) noexcept {
+    log_.Record({EventKind::kCopyAssign, name_, other.name_});
+    moved_from_ = false;
+    return *this;
+  }
 
-    Tracer& operator=(Tracer&& other) noexcept {
-        log_.record({EventKind::move_assign, name_, other.name_});
-        moved_from_ = false;
-        other.moved_from_ = true;
-        return *this;
-    }
+  Tracer& operator=(Tracer&& other) noexcept {
+    log_.Record({EventKind::kMoveAssign, name_, other.name_});
+    moved_from_ = false;
+    other.moved_from_ = true;
+    return *this;
+  }
 
-    ~Tracer() noexcept {
-        log_.record({EventKind::destroy, name_, moved_from_ ? "moved-from" : ""});
-    }
+  ~Tracer() noexcept {
+    log_.Record({EventKind::kDestroy, name_, moved_from_ ? "moved-from" : ""});
+  }
 
-private:
-    EventLog& log_;
-    std::string_view name_;
-    bool moved_from_{};
+ private:
+  EventLog& log_;
+  std::string_view name_;
+  bool moved_from_{};
 };
 
 class FailingObject {
-public:
-    explicit FailingObject(EventLog& log) : member_(log, "member"), log_(log) {
-        log_.record({EventKind::constructor_body, "complete-object"});
-        throw std::runtime_error("construction failed");
-    }
+ public:
+  explicit FailingObject(EventLog& log) : member_(log, "member"), log_(log) {
+    log_.Record({EventKind::kConstructorBody, "complete-object"});
+    throw std::runtime_error("construction failed");
+  }
 
-    ~FailingObject() noexcept {
-        log_.record({EventKind::destroy, "complete-object"});
-    }
+  ~FailingObject() noexcept { log_.Record({EventKind::kDestroy, "complete-object"}); }
 
-private:
-    Tracer member_;
-    EventLog& log_;
+ private:
+  Tracer member_;
+  EventLog& log_;
 };
 
-constexpr std::string_view to_string(EventKind kind) noexcept {
-    switch (kind) {
-    case EventKind::construct: return "construct";
-    case EventKind::copy_construct: return "copy-construct";
-    case EventKind::move_construct: return "move-construct";
-    case EventKind::copy_assign: return "copy-assign";
-    case EventKind::move_assign: return "move-assign";
-    case EventKind::destroy: return "destroy";
-    case EventKind::constructor_body: return "constructor-body";
-    case EventKind::caught: return "caught";
-    }
-    std::terminate();
+constexpr std::string_view ToString(EventKind kind) noexcept {
+  switch (kind) {
+    case EventKind::kConstruct:
+      return "construct";
+    case EventKind::kCopyConstruct:
+      return "copy-construct";
+    case EventKind::kMoveConstruct:
+      return "move-construct";
+    case EventKind::kCopyAssign:
+      return "copy-assign";
+    case EventKind::kMoveAssign:
+      return "move-assign";
+    case EventKind::kDestroy:
+      return "destroy";
+    case EventKind::kConstructorBody:
+      return "constructor-body";
+    case EventKind::kCaught:
+      return "caught";
+  }
+  std::terminate();
 }
 
-void print(std::string_view scenario, std::span<const Event> events) {
-    std::cout << "\n[" << scenario << "]\n";
-    for (const auto& event : events) {
-        std::cout << "  " << to_string(event.kind) << ": " << event.object;
-        if (!event.related.empty()) {
-            std::cout << " <- " << event.related;
-        }
-        std::cout << '\n';
-    }
+void Print(std::string_view scenario, std::span<const Event> events) {
+  std::cout << "\n[" << scenario << "]\n";
+  for (const auto& event : events) {
+    std::cout << "  " << ToString(event.kind) << ": " << event.object;
+    if (!event.related.empty()) std::cout << " <- " << event.related;
+    std::cout << '\n';
+  }
 }
 
-void verify(std::string_view scenario,
-            std::span<const Event> actual,
+void Verify(std::string_view scenario, std::span<const Event> actual,
             std::span<const Event> expected) {
-    print(scenario, actual);
-    if (actual.size() != expected.size()) {
-        throw std::runtime_error("unexpected event count in " + std::string(scenario));
+  Print(scenario, actual);
+  if (actual.size() != expected.size()) {
+    throw std::runtime_error("unexpected event count in " + std::string(scenario));
+  }
+  for (std::size_t index = 0; index < actual.size(); ++index) {
+    if (actual[index] != expected[index]) {
+      throw std::runtime_error("unexpected event in " + std::string(scenario));
     }
-    for (std::size_t index = 0; index < actual.size(); ++index) {
-        if (actual[index] != expected[index]) {
-            throw std::runtime_error("unexpected event in " + std::string(scenario));
-        }
-    }
+  }
 }
 
-void scope_scenario() {
-    EventLog log;
-    {
-        Tracer first(log, "first");
-        Tracer second(log, "second");
-    }
+void ScopeScenario() {
+  EventLog log;
+  {
+    Tracer first(log, "first");
+    Tracer second(log, "second");
+  }
 
-    constexpr std::array expected{
-        Event{EventKind::construct, "first"},
-        Event{EventKind::construct, "second"},
-        Event{EventKind::destroy, "second"},
-        Event{EventKind::destroy, "first"},
-    };
-    verify("scope: reverse destruction order", log.events(), expected);
+  constexpr std::array kExpected{
+      Event{EventKind::kConstruct, "first"},
+      Event{EventKind::kConstruct, "second"},
+      Event{EventKind::kDestroy, "second"},
+      Event{EventKind::kDestroy, "first"},
+  };
+  Verify("scope: reverse destruction order", log.Events(), kExpected);
 }
 
-void copy_move_scenario() {
-    EventLog log;
-    {
-        Tracer source(log, "source");
-        Tracer copied(source, "copied");
-        Tracer moved(std::move(source), "moved");
-        Tracer copy_target(log, "copy-target");
-        copy_target = copied;
-        Tracer move_target(log, "move-target");
-        move_target = std::move(copied);
-    }
+void CopyMoveScenario() {
+  EventLog log;
+  {
+    Tracer source(log, "source");
+    Tracer copied(source, "copied");
+    Tracer moved(std::move(source), "moved");
+    Tracer copy_target(log, "copy-target");
+    copy_target = copied;
+    Tracer move_target(log, "move-target");
+    move_target = std::move(copied);
+  }
 
-    constexpr std::array expected{
-        Event{EventKind::construct, "source"},
-        Event{EventKind::copy_construct, "copied", "source"},
-        Event{EventKind::move_construct, "moved", "source"},
-        Event{EventKind::construct, "copy-target"},
-        Event{EventKind::copy_assign, "copy-target", "copied"},
-        Event{EventKind::construct, "move-target"},
-        Event{EventKind::move_assign, "move-target", "copied"},
-        Event{EventKind::destroy, "move-target"},
-        Event{EventKind::destroy, "copy-target"},
-        Event{EventKind::destroy, "moved"},
-        Event{EventKind::destroy, "copied", "moved-from"},
-        Event{EventKind::destroy, "source", "moved-from"},
-    };
-    verify("explicit copy and move operations", log.events(), expected);
+  constexpr std::array kExpected{
+      Event{EventKind::kConstruct, "source"},
+      Event{EventKind::kCopyConstruct, "copied", "source"},
+      Event{EventKind::kMoveConstruct, "moved", "source"},
+      Event{EventKind::kConstruct, "copy-target"},
+      Event{EventKind::kCopyAssign, "copy-target", "copied"},
+      Event{EventKind::kConstruct, "move-target"},
+      Event{EventKind::kMoveAssign, "move-target", "copied"},
+      Event{EventKind::kDestroy, "move-target"},
+      Event{EventKind::kDestroy, "copy-target"},
+      Event{EventKind::kDestroy, "moved"},
+      Event{EventKind::kDestroy, "copied", "moved-from"},
+      Event{EventKind::kDestroy, "source", "moved-from"},
+  };
+  Verify("explicit copy and move operations", log.Events(), kExpected);
 }
 
-void stack_unwinding_scenario() {
-    EventLog log;
-    try {
-        Tracer first(log, "first-local");
-        Tracer second(log, "second-local");
-        throw std::runtime_error("leave scope");
-    } catch (const std::runtime_error&) {
-        log.record({EventKind::caught, "stack-unwinding"});
-    }
+void StackUnwindingScenario() {
+  EventLog log;
+  try {
+    Tracer first(log, "first-local");
+    Tracer second(log, "second-local");
+    throw std::runtime_error("leave scope");
+  } catch (const std::runtime_error&) {
+    log.Record({EventKind::kCaught, "stack-unwinding"});
+  }
 
-    constexpr std::array expected{
-        Event{EventKind::construct, "first-local"},
-        Event{EventKind::construct, "second-local"},
-        Event{EventKind::destroy, "second-local"},
-        Event{EventKind::destroy, "first-local"},
-        Event{EventKind::caught, "stack-unwinding"},
-    };
-    verify("exception: stack unwinding", log.events(), expected);
+  constexpr std::array kExpected{
+      Event{EventKind::kConstruct, "first-local"},
+      Event{EventKind::kConstruct, "second-local"},
+      Event{EventKind::kDestroy, "second-local"},
+      Event{EventKind::kDestroy, "first-local"},
+      Event{EventKind::kCaught, "stack-unwinding"},
+  };
+  Verify("exception: stack unwinding", log.Events(), kExpected);
 }
 
-void failed_construction_scenario() {
-    EventLog log;
-    try {
-        FailingObject object(log);
-    } catch (const std::runtime_error&) {
-        log.record({EventKind::caught, "construction-failure"});
-    }
+void FailedConstructionScenario() {
+  EventLog log;
+  try {
+    FailingObject object(log);
+  } catch (const std::runtime_error&) {
+    log.Record({EventKind::kCaught, "construction-failure"});
+  }
 
-    constexpr std::array expected{
-        Event{EventKind::construct, "member"},
-        Event{EventKind::constructor_body, "complete-object"},
-        Event{EventKind::destroy, "member"},
-        Event{EventKind::caught, "construction-failure"},
-    };
-    verify("exception: incomplete object", log.events(), expected);
+  constexpr std::array kExpected{
+      Event{EventKind::kConstruct, "member"},
+      Event{EventKind::kConstructorBody, "complete-object"},
+      Event{EventKind::kDestroy, "member"},
+      Event{EventKind::kCaught, "construction-failure"},
+  };
+  Verify("exception: incomplete object", log.Events(), kExpected);
 }
 
 int main() {
-    try {
-        scope_scenario();
-        copy_move_scenario();
-        stack_unwinding_scenario();
-        failed_construction_scenario();
-        std::cout << "\nAll object lifetime checks passed.\n";
-        return EXIT_SUCCESS;
-    } catch (const std::exception& error) {
-        std::cerr << "object_lifetime_lab failed: " << error.what() << '\n';
-        return EXIT_FAILURE;
-    }
+  try {
+    ScopeScenario();
+    CopyMoveScenario();
+    StackUnwindingScenario();
+    FailedConstructionScenario();
+    std::cout << "\nAll object lifetime checks passed.\n";
+    return EXIT_SUCCESS;
+  } catch (const std::exception& error) {
+    std::cerr << "object_lifetime_lab failed: " << error.what() << '\n';
+    return EXIT_FAILURE;
+  }
 }

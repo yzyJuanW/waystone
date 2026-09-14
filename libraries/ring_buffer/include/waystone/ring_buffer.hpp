@@ -8,87 +8,81 @@
 
 namespace waystone {
 
-template <class T, std::size_t Capacity>
-class ring_buffer {
-    static_assert(Capacity > 0, "ring_buffer capacity must be greater than zero");
+template <class T, std::size_t kCapacity>
+class RingBuffer {
+  static_assert(kCapacity > 0, "RingBuffer capacity must be greater than zero");
 
-public:
-    using value_type = T;
-    using size_type = std::size_t;
-    using reference = T&;
-    using const_reference = const T&;
+ public:
+  using ValueType = T;
+  using SizeType = std::size_t;
+  using Reference = T&;
+  using ConstReference = const T&;
 
-    [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
-    [[nodiscard]] constexpr bool full() const noexcept { return size_ == Capacity; }
-    [[nodiscard]] constexpr size_type size() const noexcept { return size_; }
-    [[nodiscard]] static constexpr size_type capacity() noexcept { return Capacity; }
+  [[nodiscard]] constexpr bool Empty() const noexcept { return size_ == 0; }
+  [[nodiscard]] constexpr bool Full() const noexcept { return size_ == kCapacity; }
+  [[nodiscard]] constexpr SizeType Size() const noexcept { return size_; }
+  [[nodiscard]] static constexpr SizeType Capacity() noexcept { return kCapacity; }
 
-    [[nodiscard]] bool try_push_back(const T& value) {
-        return try_emplace_back(value);
+  [[nodiscard]] bool TryPushBack(const T& value) { return TryEmplaceBack(value); }
+
+  [[nodiscard]] bool TryPushBack(T&& value) { return TryEmplaceBack(std::move(value)); }
+
+  template <class... Args>
+  [[nodiscard]] bool TryEmplaceBack(Args&&... args) {
+    if (Full()) return false;
+
+    storage_[tail_].emplace(std::forward<Args>(args)...);
+    tail_ = Next(tail_);
+    ++size_;
+    return true;
+  }
+
+  constexpr Reference Front() {
+    assert(!Empty());
+    return *storage_[head_];
+  }
+
+  constexpr ConstReference Front() const {
+    assert(!Empty());
+    return *storage_[head_];
+  }
+
+  constexpr Reference Back() {
+    assert(!Empty());
+    return *storage_[Previous(tail_)];
+  }
+
+  constexpr ConstReference Back() const {
+    assert(!Empty());
+    return *storage_[Previous(tail_)];
+  }
+
+  constexpr void PopFront() {
+    assert(!Empty());
+    storage_[head_].reset();
+    head_ = Next(head_);
+    --size_;
+  }
+
+  constexpr void Clear() {
+    while (!Empty()) {
+      PopFront();
     }
+  }
 
-    [[nodiscard]] bool try_push_back(T&& value) {
-        return try_emplace_back(std::move(value));
-    }
+ private:
+  [[nodiscard]] static constexpr SizeType Next(SizeType index) noexcept {
+    return index + 1 == kCapacity ? 0 : index + 1;
+  }
 
-    template <class... Args>
-    [[nodiscard]] bool try_emplace_back(Args&&... args) {
-        if (full()) {
-            return false;
-        }
+  [[nodiscard]] static constexpr SizeType Previous(SizeType index) noexcept {
+    return index == 0 ? kCapacity - 1 : index - 1;
+  }
 
-        storage_[tail_].emplace(std::forward<Args>(args)...);
-        tail_ = next(tail_);
-        ++size_;
-        return true;
-    }
-
-    constexpr reference front() {
-        assert(!empty());
-        return *storage_[head_];
-    }
-
-    constexpr const_reference front() const {
-        assert(!empty());
-        return *storage_[head_];
-    }
-
-    constexpr reference back() {
-        assert(!empty());
-        return *storage_[previous(tail_)];
-    }
-
-    constexpr const_reference back() const {
-        assert(!empty());
-        return *storage_[previous(tail_)];
-    }
-
-    constexpr void pop_front() {
-        assert(!empty());
-        storage_[head_].reset();
-        head_ = next(head_);
-        --size_;
-    }
-
-    constexpr void clear() {
-        while (!empty()) {
-            pop_front();
-        }
-    }
-
-private:
-    [[nodiscard]] static constexpr size_type next(size_type index) noexcept {
-        return index + 1 == Capacity ? 0 : index + 1;
-    }
-
-    [[nodiscard]] static constexpr size_type previous(size_type index) noexcept {
-        return index == 0 ? Capacity - 1 : index - 1;
-    }
-
-    std::array<std::optional<T>, Capacity> storage_{};
-    size_type head_ = 0;
-    size_type tail_ = 0;
-    size_type size_ = 0;
+  std::array<std::optional<T>, kCapacity> storage_{};
+  SizeType head_ = 0;
+  SizeType tail_ = 0;
+  SizeType size_ = 0;
 };
 
-} // namespace waystone
+}  // namespace waystone

@@ -2,17 +2,17 @@
 
 [中文](README.zh-CN.md)
 
-`waystone::ring_buffer<T, Capacity>` is a fixed-capacity, non-thread-safe FIFO container. It never overwrites existing elements: insertion returns `false` when the buffer is full.
+`waystone::RingBuffer<T, kCapacity>` is a fixed-capacity, non-thread-safe FIFO container. It never overwrites existing elements: insertion returns `false` when the buffer is full.
 
 ## Quick Start
 
 ```cpp
 #include <waystone/ring_buffer.hpp>
 
-waystone::ring_buffer<int, 4> buffer;
-if (buffer.try_push_back(42)) {
-    int value = buffer.front();
-    buffer.pop_front();
+waystone::RingBuffer<int, 4> buffer;
+if (buffer.TryPushBack(42)) {
+  int value = buffer.Front();
+  buffer.PopFront();
 }
 ```
 
@@ -33,17 +33,17 @@ target_link_libraries(my_app PRIVATE waystone::ring_buffer)
 
 ## API
 
-- `try_push_back(value)` and `try_emplace_back(args...)` insert at the back. They return `false` without modifying the buffer when it is full. Exceptions from element construction propagate and leave the buffer unchanged.
-- `front()` and `back()` return references to the first and last elements.
-- `pop_front()` destroys and removes the first element.
-- `clear()` destroys all elements.
-- `empty()`, `full()`, `size()`, and `capacity()` report container state.
+- `TryPushBack(value)` and `TryEmplaceBack(args...)` insert at the back. They return `false` without modifying the buffer when it is full. Exceptions from element construction propagate and leave the buffer unchanged.
+- `Front()` and `Back()` return references to the first and last elements.
+- `PopFront()` destroys and removes the first element.
+- `Clear()` destroys all elements.
+- `Empty()`, `Full()`, `Size()`, and `Capacity()` report container state.
 
-Calling `front()`, `back()`, or `pop_front()` on an empty buffer violates a precondition. Check `empty()` first.
+Calling `Front()`, `Back()`, or `PopFront()` on an empty buffer violates a precondition. Check `Empty()` first.
 
 ## Guarantees and Invalidation
 
-- Insertion, access, removal, and state queries are constant time. `clear()` is linear in the current size.
+- Insertion, access, removal, and state queries are constant time. `Clear()` is linear in the current size.
 - Insertion does not invalidate references to existing elements.
 - A reference is invalidated when its element is removed, when the buffer is cleared, or when the buffer is destroyed.
 - Copy and move availability follow `T` and the standard-library members. A moved-from buffer remains valid but has an unspecified state; it is not guaranteed to be empty.

@@ -96,6 +96,14 @@ Do not repeat the same explanation across several files. Link related code, note
 
 Public entry points, project conventions, and explicitly bilingual documents use English as the unsuffixed primary file and Chinese as a `.zh-CN.md` peer. Paired files must link to each other near the top and should be updated together. Ordinary knowledge notes may use the language that best supports the subject and are not required to have translations. File names, code identifiers, and key technical terms remain in English.
 
+## Code Style
+
+C++ formatting follows the repository `.clang-format`: Google style with two-space indentation, a 100-column limit, and short `if`/`else` statements allowed on one line. Existing `.cpp` file extensions remain unchanged.
+
+Use Google C++ naming for both existing and new Waystone code: PascalCase for types, type aliases, and functions; snake_case for variables and parameters; `kPascalCase` for constants and enumerators; and lowercase names for namespaces. Language-required names such as `main` and overloaded operators are exceptions.
+
+Python uses two spaces per indentation level and space characters rather than tabs. The root `.editorconfig` records this rule; add formatter or linter configuration only when real Python code needs it.
+
 ## Before Submitting
 
 - Keep the change focused and remove unused scaffolding.

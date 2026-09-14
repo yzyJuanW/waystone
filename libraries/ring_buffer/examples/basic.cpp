@@ -3,14 +3,13 @@
 #include <iostream>
 
 int main() {
-    waystone::ring_buffer<int, 3> buffer;
-    if (!buffer.try_push_back(10) || !buffer.try_push_back(20) ||
-        !buffer.try_push_back(30)) {
-        return 1;
-    }
+  waystone::RingBuffer<int, 3> buffer;
+  if (!buffer.TryPushBack(10) || !buffer.TryPushBack(20) || !buffer.TryPushBack(30)) {
+    return 1;
+  }
 
-    while (!buffer.empty()) {
-        std::cout << buffer.front() << '\n';
-        buffer.pop_front();
-    }
+  while (!buffer.Empty()) {
+    std::cout << buffer.Front() << '\n';
+    buffer.PopFront();
+  }
 }

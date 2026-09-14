@@ -2,17 +2,17 @@
 
 [English](README.md)
 
-`waystone::ring_buffer<T, Capacity>` 是固定容量、非线程安全的 FIFO 容器。它不会覆盖已有元素：缓冲区已满时，插入返回 `false`。
+`waystone::RingBuffer<T, kCapacity>` 是固定容量、非线程安全的 FIFO 容器。它不会覆盖已有元素：缓冲区已满时，插入返回 `false`。
 
 ## 快速开始
 
 ```cpp
 #include <waystone/ring_buffer.hpp>
 
-waystone::ring_buffer<int, 4> buffer;
-if (buffer.try_push_back(42)) {
-    int value = buffer.front();
-    buffer.pop_front();
+waystone::RingBuffer<int, 4> buffer;
+if (buffer.TryPushBack(42)) {
+  int value = buffer.Front();
+  buffer.PopFront();
 }
 ```
 
@@ -33,17 +33,17 @@ target_link_libraries(my_app PRIVATE waystone::ring_buffer)
 
 ## API
 
-- `try_push_back(value)` 和 `try_emplace_back(args...)` 在队尾插入。缓冲区已满时返回 `false`，并且不改变容器。元素构造异常会正常传播，容器保持原状。
-- `front()` 和 `back()` 返回首尾元素的引用。
-- `pop_front()` 销毁并移除首个元素。
-- `clear()` 销毁全部元素。
-- `empty()`、`full()`、`size()` 和 `capacity()` 查询容器状态。
+- `TryPushBack(value)` 和 `TryEmplaceBack(args...)` 在队尾插入。缓冲区已满时返回 `false`，并且不改变容器。元素构造异常会正常传播，容器保持原状。
+- `Front()` 和 `Back()` 返回首尾元素的引用。
+- `PopFront()` 销毁并移除首个元素。
+- `Clear()` 销毁全部元素。
+- `Empty()`、`Full()`、`Size()` 和 `Capacity()` 查询容器状态。
 
-对空缓冲区调用 `front()`、`back()` 或 `pop_front()` 会违反前置条件。调用前应先检查 `empty()`。
+对空缓冲区调用 `Front()`、`Back()` 或 `PopFront()` 会违反前置条件。调用前应先检查 `Empty()`。
 
 ## 保证与失效规则
 
-- 插入、访问、移除和状态查询均为常数时间；`clear()` 与当前元素数量呈线性关系。
+- 插入、访问、移除和状态查询均为常数时间；`Clear()` 与当前元素数量呈线性关系。
 - 插入不会使已有元素的引用失效。
 - 元素被移除、容器被清空或销毁时，指向相应元素的引用失效。
 - copy/move 能力由 `T` 和标准库成员自然决定。移动后的源缓冲区仍有效，但状态未指定，不保证为空。
