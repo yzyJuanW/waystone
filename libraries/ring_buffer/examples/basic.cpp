@@ -1,6 +1,5 @@
-#include <waystone/ring_buffer.hpp>
-
 #include <iostream>
+#include <waystone/ring_buffer.hpp>
 
 int main() {
   waystone::RingBuffer<int, 3> buffer;

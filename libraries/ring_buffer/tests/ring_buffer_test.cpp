@@ -1,9 +1,8 @@
-#include <waystone/ring_buffer.hpp>
-
 #include <cassert>
 #include <memory>
 #include <stdexcept>
 #include <type_traits>
+#include <waystone/ring_buffer.hpp>
 
 namespace {
 

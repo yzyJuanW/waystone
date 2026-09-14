@@ -34,9 +34,7 @@ class EventLog {
     events_[size_++] = event;
   }
 
-  [[nodiscard]] std::span<const Event> Events() const noexcept {
-    return {events_.data(), size_};
-  }
+  [[nodiscard]] std::span<const Event> Events() const noexcept { return {events_.data(), size_}; }
 
  private:
   std::array<Event, 32> events_{};
@@ -54,8 +52,7 @@ class Tracer {
     log_.Record({EventKind::kCopyConstruct, name_, other.name_});
   }
 
-  Tracer(Tracer&& other, std::string_view name = "moved") noexcept
-      : log_(other.log_), name_(name) {
+  Tracer(Tracer&& other, std::string_view name = "moved") noexcept : log_(other.log_), name_(name) {
     log_.Record({EventKind::kMoveConstruct, name_, other.name_});
     other.moved_from_ = true;
   }
@@ -73,9 +70,7 @@ class Tracer {
     return *this;
   }
 
-  ~Tracer() noexcept {
-    log_.Record({EventKind::kDestroy, name_, moved_from_ ? "moved-from" : ""});
-  }
+  ~Tracer() noexcept { log_.Record({EventKind::kDestroy, name_, moved_from_ ? "moved-from" : ""}); }
 
  private:
   EventLog& log_;
@@ -197,10 +192,8 @@ void StackUnwindingScenario() {
   }
 
   constexpr std::array kExpected{
-      Event{EventKind::kConstruct, "first-local"},
-      Event{EventKind::kConstruct, "second-local"},
-      Event{EventKind::kDestroy, "second-local"},
-      Event{EventKind::kDestroy, "first-local"},
+      Event{EventKind::kConstruct, "first-local"},  Event{EventKind::kConstruct, "second-local"},
+      Event{EventKind::kDestroy, "second-local"},   Event{EventKind::kDestroy, "first-local"},
       Event{EventKind::kCaught, "stack-unwinding"},
   };
   Verify("exception: stack unwinding", log.Events(), kExpected);
