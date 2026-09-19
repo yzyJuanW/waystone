@@ -25,4 +25,4 @@ For documentation structure, see [docs/README.md](docs/README.md). For contribut
 
 ## Current Status
 
-The repository contains a portable, fixed-capacity [ring buffer](libraries/ring_buffer/README.md) and a focused [C++ object lifetime lab](cpp/object_lifetime_lab/README.md). Additional directories and indexes will appear only when real content needs them.
+The repository contains a portable, fixed-capacity [ring buffer](libraries/ring_buffer/README.md), a focused [C++ object lifetime lab](cpp/object_lifetime_lab/README.md), and a reusable [basic thread pool](libraries/basic_thread_pool/README.md). Additional directories and indexes will appear only when real content needs them.

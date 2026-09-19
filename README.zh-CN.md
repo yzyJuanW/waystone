@@ -25,4 +25,4 @@ C++ 是主要语言，但仓库也可以涵盖 Linux、操作系统、网络、�
 
 ## 当前状态
 
-仓库现已包含可移植、固定容量的 [ring buffer](libraries/ring_buffer/README.zh-CN.md)，以及聚焦的 [C++ 对象生命周期实验](cpp/object_lifetime_lab/README.zh-CN.md)。其他目录和索引仍只在真实内容需要时建立。
+仓库现已包含可移植、固定容量的 [ring buffer](libraries/ring_buffer/README.zh-CN.md)、聚焦的 [C++ 对象生命周期实验](cpp/object_lifetime_lab/README.zh-CN.md)，以及可复用的 [基础线程池](libraries/basic_thread_pool/README.zh-CN.md)。其他目录和索引仍只在真实内容需要时建立。
