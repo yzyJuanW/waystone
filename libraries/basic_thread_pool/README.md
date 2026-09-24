@@ -85,3 +85,7 @@ This pool does not provide cancellation, bounded queues, priorities, delayed wor
 dynamic worker counts, coroutines, affinity, a general executor interface, benchmarks, installation,
 or package configuration. For one isolated background operation, prefer `std::async` or a direct
 thread.
+
+## Further Reading
+
+- [Task submission, thread safety, and concurrent shutdown](../../docs/notes/basic_thread_pool.md)

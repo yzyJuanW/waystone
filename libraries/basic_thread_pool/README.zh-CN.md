@@ -64,3 +64,7 @@ target_link_libraries(my_app PRIVATE waystone::basic_thread_pool)
 ## 非目标
 
 本线程池不提供取消、有界队列、优先级、延迟任务、work stealing、动态 worker 数量、协程、affinity、通用 executor interface、benchmark、安装或 package 配置。若只需执行一个独立后台操作，应优先使用 `std::async` 或直接创建线程。
+
+## 延伸阅读
+
+- [任务提交、线程安全与并发关闭](../../docs/notes/basic_thread_pool.md)
