@@ -36,8 +36,16 @@ target_link_libraries(my_app PRIVATE waystone::basic_thread_pool)
 
 - `BasicThreadPool(worker_count)` starts a fixed number of workers. Zero workers throws
   `std::invalid_argument`. The pool is neither copyable nor movable.
-- `Submit(F&&, Args&&...)` stores the callable and arguments and returns a future for the result.
-  Move-only callables and arguments are supported. Use `std::ref` for intentional references.
+- `Submit(F&&, Args&&...)` stores the callable and ordinary arguments by value (copying lvalues and
+  moving rvalues when possible) and returns a future. On execution, the stored callable and
+  ordinary value arguments are passed as rvalues:
+  `Submit(c, ...)` can select `operator() &&` on a copy of the lvalue `c`. Move-only callables and
+  arguments are supported. Use `std::ref(c)` to borrow and invoke the original `c` as an lvalue;
+  keep borrowed objects alive through task completion and synchronize concurrent access.
+- To choose a ref-qualified overload, decide which object the task should call. For `operator() &`
+  on an owned copy, submit a `mutable` lambda that calls its named value capture. For
+  `operator() &&`, submit `c` to copy it or `std::move(c)` to move it into the task; the stored
+  object is invoked as an rvalue. See the [call-site examples](../../docs/notes/basic_thread_pool.md).
 - A task return value or exception is delivered by its future. A throwing task does not stop its
   worker.
 - `Shutdown()` stops accepting work, drains every accepted task, and joins all workers. It is

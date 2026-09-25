@@ -94,125 +94,68 @@ result.get();  // 若 task 未在 value 销毁前完成全部访问，task 会�
 | `[this]` | 内含 `this` pointer 的 lambda | 当前对象活到 task 结束；存在并发访问时正确同步 |
 | `std::string_view` 或 raw pointer | view 或 pointer 本身 | 底层存储保持有效；存在并发访问时正确同步 |
 
-所以边界不是“异步代码绝不能使用 reference”，而是：默认由 task 拥有执行所需状态；确实需要借用时，让借用在调用点显式可见，并由 caller 承担 lifetime 和 synchronization 责任。后面的 `std::decay_t`、lambda init-capture 和 `std::ref` 小节会分别解释这两种语义怎样实现。
+所以边界不是“异步代码绝不能使用 reference”，而是：默认由 task 拥有执行所需状态；确实需要借用时，让借用在调用点显式可见，并由 caller 承担 lifetime 和 synchronization 责任。第 2.2 节展示默认值存储，第 2.3 节展示显式借用。
 
-## 2. `Submit()` 的类型与所有权工具
+## 2. `Submit()`：把一次调用变成队列任务
 
-### 2.1 先读懂函数声明
+第 1 章展示了整体数据流。本章沿真实 `Submit()` 代码看四步：接收调用、保存并执行、建立结果通道、统一队列任务类型。
 
-真实声明可以先拆成“模板参数、函数参数、返回类型”三部分：
+### 2.1 接收调用与确定结果类型
 
 ```cpp
-// 局部片段
-class BasicThreadPool {
- public:
-  template <class F, class... Args>
-  [[nodiscard]] auto Submit(F&& function, Args&&... args)
-      -> std::future<std::invoke_result_t<std::decay_t<F>, std::decay_t<Args>...>> {
-    // ...
-  }
+// 局部片段：BasicThreadPool 的 Submit 声明
+template <class F, class... Args>
+[[nodiscard]] auto Submit(F&& function, Args&&... args)
+    -> std::future<std::invoke_result_t<std::decay_t<F>, std::decay_t<Args>...>>;
+```
+
+`F&&` 和 `Args&&...` 在这里参与模板推导，是 forwarding references（转发引用，C++11）：传入左值时推导出引用类型（例如 `F=Callable&`），传入右值时推导出值类型（`F=Callable`）。这让同一个接口能接收可复制的左值和只能移动的右值；普通的、没有模板推导的 `Widget&&` 则只是右值引用。
+
+`std::decay_t`（C++14）把推导类型转成适合按值保存的类型，例如 `decay_t<Callable&>` 是 `Callable`。`std::invoke_result_t`（C++17）查询以这些类型调用时的结果类型，不执行任务；返回 `T&` 时，结果类型仍是 `T&`。当前返回值是 `future<Result>`，其中 `Result` 来自这次类型查询。`[[nodiscard]]` 提醒调用者保留 future，以便获取结果或观察异常；尾置返回类型只是把较长的类型放在参数之后。
+
+### 2.2 保存并执行一次性调用
+
+`Submit()` 用 init-capture（初始化捕获，C++14）把 callable 和参数放进闭包：
+
+```cpp
+// 局部片段：Submit 中的任务封装
+auto bound_task = [function = std::decay_t<F>(std::forward<F>(function)),
+                   arguments = std::make_tuple(std::forward<Args>(args)...)]() mutable -> Result {
+  return std::apply(std::move(function), std::move(arguments));
 };
 ```
 
-`[[nodiscard]]`（C++17）表示调用者不应随意丢弃返回值。如果忽略 `Submit()` 返回的 future，编译器通常会警告，因为调用者将无法取得结果或观察任务异常：
+`std::forward`（C++11）按接收时推导的值类别构造保存值：左值通常复制，右值通常移动。`std::decay_t<F>` 去掉 callable 类型上的引用和顶层 `const`；`std::make_tuple`（C++11）默认按值保存各个参数。因此 `Submit()` 返回后，任务仍拥有自己要调用的 callable 和普通参数。闭包拥有的是保存值本身；若值内部含有 pointer、view 或 reference capture，所指对象仍由调用者负责，见第 1.1 节。
+
+`mutable` 使闭包能移出捕获的状态。执行时，`std::apply`（C++17）展开 tuple，再按 `std::invoke`（C++17）规则调用；代码把保存的 callable 和参数 tuple 都作为右值传入。普通值元素也以右值展开，因此 move-only 参数可以交给 callable；tuple 中的引用元素仍引用原对象。这是一次性消费保存状态的任务，不应重复调用。
+
+这同时定义了当前 `Submit()` 的调用形式。下面的 `callable` 是左值，但线程池先保存其副本，执行时以右值调用副本：
 
 ```cpp
-// 局部片段
-pool.Submit([] { return 42; });                // 可能触发 nodiscard 警告
-auto result = pool.Submit([] { return 42; });  // 保留 future
+// 局部片段：假设已有 pool
+struct Consume {
+  int operator()(std::unique_ptr<int>) & { return -1; }
+  int operator()(std::unique_ptr<int> value) && { return *value + 2; }
+};
+
+Consume callable;
+int direct = callable(std::make_unique<int>(1));                        // -1：原对象是左值
+int submitted = pool.Submit(callable, std::make_unique<int>(1)).get();  // 3：副本以右值调用
+int borrowed = pool.Submit(std::ref(callable), std::make_unique<int>(1)).get();  // -1：原对象
+auto call_owned_lvalue = [saved = callable](std::unique_ptr<int> value) mutable {
+  return saved(std::move(value));  // saved 是左值
+};
+int owned_lvalue = pool.Submit(std::move(call_owned_lvalue), std::make_unique<int>(1)).get();
+int moved_rvalue = pool.Submit(std::move(callable), std::make_unique<int>(1)).get();  // 3：移入任务
 ```
 
-`auto Submit(...) -> ReturnType` 是 trailing return type（尾置返回类型，C++11）写法。这里并非只能使用尾置返回类型；它只是把很长的依赖类型放到函数名和参数之后，便于先看到 `Submit()` 接收什么。
+要选 `operator() &`，先决定调用哪个对象：`std::ref(callable)` 借用原对象；`call_owned_lvalue` 则让任务拥有副本，内部具名的 `saved` 是左值，`mutable` 使非 `const` 的 `operator() &` 可以被调用。借用时须保证原对象活到任务结束，并同步并发访问。
 
-### 2.2 `F&&` 不总是 rvalue reference（右值引用，C++11）
+要选 `operator() &&`，`Submit(callable, ...)` 会复制后以右值调用副本；`Submit(std::move(callable), ...)` 会把原对象的状态移入任务，再以右值调用保存值。后一种写法之后，不应再依赖原对象原有的状态。这些重载由实际调用表达式决定，`Result` 的类型查询不能代替选择；更一般的方法见[现代 C++ 调用语义笔记](cpp_call_semantics.md)。
 
-这里的 `F&&` 和 `Args&&...` 会参与 template argument deduction（模板实参推导），因此是 forwarding references（转发引用）：
+### 2.3 显式借用与异步生命周期
 
-假设 callable 的具体类型是 `Callable`：
-
-- 传入 `Callable` 类型的 lvalue（左值）`f` 时，`F` 推导为 `Callable&`。把它代回 `F&&`
-  得到 `Callable& &&`，根据 reference collapsing（引用折叠）规则最终是 `Callable&`；
-- 传入 `Callable` 类型的 rvalue（右值）时，`F` 推导为 `Callable`，代回后的参数类型是
-  `Callable&&`。
-
-`Callable& &&` 中同时出现了两层引用，引用折叠规则负责把它合并成一个最终引用类型。`Args&&...` 中的每个参数也分别遵循同样的推导与引用折叠规则。
-
-这让同一个接口既能接收需要复制的 lvalue，也能接收只能移动的 rvalue。普通的、没有 template deduction 的 `Widget&&` 只是 rvalue reference，不是 forwarding reference。
-
-`Args...` 是 template parameter pack（模板形参包），`args...` 是对应的 function parameter pack（函数形参包）。省略号允许参数数量和类型都变化：
-
-```cpp
-// 局部片段
-pool.Submit([] { return 1; });
-pool.Submit([](int x) { return x * 2; }, 21);
-pool.Submit([](int x, std::string text) { /* ... */ }, 7, "work");
-```
-
-把推导结果直接写在调用旁边，会更容易建立直觉：
-
-```cpp
-// 局部片段
-Callable callable;
-int value = 42;
-
-pool.Submit(callable, value);  // F = Callable&, Args... = int&
-pool.Submit(Callable{}, 42);   // F = Callable,  Args... = int
-```
-
-### 2.3 `std::forward`（C++11）保留调用者的 value category（值类别）
-
-forwarding reference 只负责“接住”参数。继续向下传递时，需要 `std::forward<T>`：
-
-```cpp
-// 局部片段
-template <class T>
-void Relay(T&& value) {
-  Consume(std::forward<T>(value));
-}
-
-Widget widget;
-Relay(widget);    // T = Widget&，向下继续传递 lvalue
-Relay(Widget{});  // T = Widget，向下继续传递 rvalue
-```
-
-- 原参数是 lvalue，`std::forward<T>(value)` 仍是 lvalue；
-- 原参数是 rvalue，它仍是 rvalue，可以选择 move constructor。
-
-不要把 `std::forward` 理解成“更聪明的 move”。`std::move` 无条件把表达式转成 rvalue；`std::forward` 只在 forwarding template 中恢复调用者原本的 value category。
-
-### 2.4 为什么存储时需要 `std::decay_t`（C++14）
-
-异步任务不能只借用 `Submit()` 的局部参数。`Submit()` 返回后，参数变量 `function` 和 `args...` 就不存在了。实现使用：
-
-```cpp
-// 局部片段
-std::decay_t<F>(std::forward<F>(function))
-```
-
-`std::decay` 在 C++11 就已提供；C++14 新增的 `std::decay_t<T>` 只是 `typename std::decay<T>::type` 的便捷别名。它产生适合按值存储的类型，主要效果包括：
-
-- 去掉 reference；
-- 去掉顶层 `const`/`volatile`；
-- array 转成 pointer；
-- function type 转成 function pointer。
-
-几个直接的类型对照：
-
-```cpp
-// 局部片段
-using A = std::decay_t<int&>;         // int
-using B = std::decay_t<const int&>;   // int
-using C = std::decay_t<int[3]>;       // int*
-using D = std::decay_t<int(double)>;  // int (*)(double)
-```
-
-于是默认规则很明确：lvalue 被复制，rvalue 被移动，线程池拥有存入任务的对象。这个默认值语义比默默保存 reference 更安全，因为任务可能在原作用域结束后才运行。
-
-这里的“拥有”只到 decay 后的存储值这一层，不能递归改变对象内部的 ownership。若存入的 lambda 使用 `[&value]` 捕获，线程池拥有 lambda，仍不拥有 `value`；调用者必须保证 `value` 的 lifetime，并在存在并发访问时提供同步。第 1.1 节给出了完整反例。
-
-### 2.5 `std::ref` 是显式借用（C++11）
-
-如果 callable 的参数必须引用原对象，可以使用 `std::ref`：
+需要让任务修改原对象时，可以明确提交 `std::ref`：
 
 ```cpp
 // 局部片段
@@ -221,116 +164,13 @@ auto result = pool.Submit([](int& value) { ++value; }, std::ref(total));
 result.get();
 ```
 
-`std::ref(total)` 返回 `std::reference_wrapper<int>`。`std::make_tuple` 会识别它并保留 reference 语义，而不是复制 `total`。
+`std::ref(total)` 产生 `reference_wrapper<int>`，而 `std::make_tuple` 会把它保存为 `int&`。因此任务修改的是原来的 `total`；调用者必须让它活到任务结束，并在并发访问时提供同步。`result.get()` 在这里等待任务完成。`[&object]`、`[this]`、pointer 和 view 同样不会因闭包被保存而延长所指对象的生命周期。
 
-代价也必须显式承担：
+还有一个较少见的结果类型边界：`Result` 按 `decay_t<Args>` 查询时看到的是 `reference_wrapper<int>`，但实际 tuple 元素是 `int&`。若 callable 对这两种类型重载，查询与实际调用可能选中不同重载；返回类型即使可转换，也不能据此认定选中了预期函数。具体例子见[调用语义笔记的 `std::ref` 小节](cpp_call_semantics.md)。
 
-- `total` 必须活到任务结束；
-- 若多个线程访问 `total`，调用者必须提供同步；
-- reference 不表达 ownership，不能延长 lifetime。
+### 2.4 `packaged_task` 与 `future`：结果和异常通道
 
-因此经验规则是：异步边界默认传值；只有明确需要共享同一对象，并且 lifetime 与同步都已经设计好时，才用 `std::ref` 或 reference capture。
-
-### 2.6 `std::make_tuple`（C++11）与 `std::apply`（C++17）
-
-参数数量不固定，不能为每个数量编写一种 task type。`std::make_tuple` 把参数集合存成一个对象，`std::apply` 再把 tuple 展开为一次调用。
-
-先看最小用法：
-
-```cpp
-// 局部片段
-auto add = [](int left, int right) { return left + right; };
-auto arguments = std::make_tuple(20, 22);
-int answer = std::apply(add, arguments);  // 42
-```
-
-完整示例（可独立编译运行）：
-
-```cpp
-#include <cassert>
-#include <functional>
-#include <memory>
-#include <tuple>
-#include <utility>
-
-int main() {
-  auto arguments = std::make_tuple(std::make_unique<int>(40), 2);
-  auto add = [](std::unique_ptr<int> left, int right) { return *left + right; };
-  assert(std::apply(std::move(add), std::move(arguments)) == 42);
-
-  int value = 1;
-  auto references = std::make_tuple(std::ref(value));
-  std::apply([](int& item) { ++item; }, references);
-  assert(value == 2);
-}
-```
-
-第一个调用把 tuple 作为 rvalue 展开，因此其中的 `std::unique_ptr` 可以移动给 callable。第二个调用展示 `std::ref` 保留的借用语义。示例中的 `std::make_unique` 来自 C++14。
-
-`std::apply` 最终按 `std::invoke`（C++17）的规则执行 callable，所以不仅支持普通 function 和 lambda，也支持 function object（函数对象）、member function pointer 和 data member pointer。
-
-### 2.7 lambda init-capture（初始化捕获，C++14）与 `mutable`（C++11）
-
-`Submit()` 使用 C++14 init-capture，在创建 lambda 的同时构造它的成员：
-
-```cpp
-// 局部片段
-int value = 41;
-auto read = [saved = value + 1] { return saved; };
-int answer = read();  // 42
-```
-
-```cpp
-// 局部片段
-auto bound_task = [function = std::decay_t<F>(std::forward<F>(function)),
-                   arguments = std::make_tuple(std::forward<Args>(args)...)]() mutable -> Result {
-  return std::apply(std::move(function), std::move(arguments));
-};
-```
-
-可以把 capture 想成 compiler 生成的匿名 class 的 data members。默认情况下，lambda 的 `operator()` 是 `const`，因此在函数体内只能把按值捕获的成员当作 `const` 对象访问，无法按这里需要的方式移出 move-only（只能移动、不能复制）状态。`mutable` 使 `operator()` 不再是 `const`，从而让 task 执行时可以消费保存的 function 和 arguments。
-
-一个更直观的 `mutable` 用法是修改 lambda 自己按值捕获的状态：
-
-```cpp
-// 局部片段
-auto counter = [count = 0]() mutable { return ++count; };
-int first = counter();   // 1
-int second = counter();  // 2
-```
-
-这也说明该 bound task 是一次性任务：它会移动并消费保存的状态，不应该被重复调用。
-
-### 2.8 `std::invoke_result_t` 在编译期计算结果类型（C++17）
-
-`Submit()` 的 `Result` 来自：
-
-```cpp
-// 局部片段
-using Result = std::invoke_result_t<std::decay_t<F>, std::decay_t<Args>...>;
-```
-
-先看一个不带参数包的最小例子：
-
-```cpp
-// 局部片段
-auto convert = [](int value) { return value + 0.5; };
-using Result = std::invoke_result_t<decltype(convert), int>;  // double
-```
-
-它不是执行 function，而是询问 compiler：“按 `std::invoke` 的规则，用这些 argument types 调用这个 callable，会得到什么类型？”
-
-- callable 返回 `int`，`Result` 是 `int`；
-- callable 返回 `void`，`Result` 是 `void`；
-- 调用在类型层面不成立，template substitution（模板替换）会失败，错误在编译期暴露。
-
-工业代码中的意义是让 API 的返回类型与 callable 保持一致，而不要求调用者手写 `Result`。代价是 template error 可能较长，排查时应先单独验证“这个 callable 能否用这些 argument types 调用”。
-
-### 2.9 `std::packaged_task` 与 `std::future`（C++11）
-
-`std::packaged_task<R(Args...)>` 同时拥有两样东西：一个 callable，以及一个用于保存返回值或异常的 shared state。`get_future()` 返回读取这个 state 的 `std::future<R>`。
-
-同一个 shared state 只能通过 `get_future()` 取得一次 future。当前实现先取 future，再把 `result_task` 移入外层 lambda；移动后，原变量已经不再拥有该 shared state。
+`std::packaged_task<R(Args...)>`（C++11）拥有 callable 和保存结果或异常的 shared state。`get_future()` 返回关联的 `std::future<R>`，同一个 task 只能取得一次 future。当前实现先取 future，再把 task 移入队列包装；移动不切断与 shared state 的关联。
 
 完整示例（可独立编译运行）：
 
@@ -357,21 +197,11 @@ int main() {
 }
 ```
 
-重点不是“future 会开线程”——它不会。这里是调用 `packaged_task` 的线程执行 callable；future 只代表结果通道。
+调用 `packaged_task` 的线程执行 callable；future 本身不开线程。task 的异常进入 shared state，并由 `future::get()` 重新抛出，worker 因而可以继续处理下一个任务。`get()` 等待结果 ready，调用一次后 future 不再关联 shared state。若 `Result=T&`，`future<T&>` 也不会延长被引用对象的生命周期。
 
-callable 抛出的异常由 `packaged_task` 捕获并保存，随后由 `future::get()` 重新抛出。因此 worker 不会因为普通任务异常而退出。`get()` 还会等待结果 ready；成功调用一次后，该 `std::future` 不再关联 shared state，不能再次 `get()`。需要多次读取同一结果时，应使用 `std::shared_future`。
+### 2.5 为什么队列里统一存 `packaged_task<void()>`
 
-### 2.10 为什么还要包装成 `std::packaged_task<void()>`
-
-每次 `Submit()` 的 `Result` 可能不同：
-
-```text
-packaged_task<int()>
-packaged_task<std::string()>
-packaged_task<void()>
-```
-
-这些是不同类型，不能直接进入同一个 `std::queue<T>`。实现保留各自的内层 task，再用统一的外层 task 调用它：
+不同提交可能产生 `packaged_task<int()>`、`packaged_task<std::string()>` 或 `packaged_task<void()>`，这些类型不能直接放入同一个 `std::queue<T>`。实现用第二层无参任务统一队列元素：
 
 ```cpp
 // 局部片段
@@ -381,9 +211,7 @@ auto result = result_task.get_future();
 std::packaged_task<void()> queued_task([task = std::move(result_task)]() mutable { task(); });
 ```
 
-queue 只关心“执行一个无参、无返回值的工作单元”，调用者仍通过先前取得的 future 得到真正结果。这是一种有目的的 type erasure（类型擦除）：隐藏 queue 不需要知道的 result type，但保留结果通道。
-
-为什么不直接使用 `std::function<void()>`（C++11）？因为 `std::function` 要求其 target 可复制，而捕获 `std::packaged_task` 或 `std::unique_ptr` 的 lambda 是 move-only。`std::packaged_task<void()>` 自身支持 move-only ownership，正好符合 queue 的需要。C++23 的 `std::move_only_function` 是另一种可能，但本模块承诺 C++20。
+queue 只需执行一个无参、无返回值的工作单元；内层 task 仍把真实结果或异常送到先前取得的 future。这种 type erasure（类型擦除）只隐藏 queue 不需要的结果类型。这里使用 move-only 的 `packaged_task<void()>`，因为 `std::function<void()>`（C++11）要求 target 可复制，不能保存捕获 move-only task 的 lambda。C++23 的 `std::move_only_function` 是另一种选择，但本模块使用 C++20。
 
 ## 3. 线程安全不是“加了一把锁”
 
@@ -685,7 +513,7 @@ stopped
 
 ### 5.3 value ownership 与 borrowed reference（借用引用）
 
-第 1.1、2.4 和 2.5 节已经用当前 `Submit()` 展示了 ownership 与借用的具体语义。把这条原则迁移到其他异步 API 时，可以分两层检查：
+第 1.1、2.2 和 2.3 节已经用当前 `Submit()` 展示了 ownership 与借用的具体语义。把这条原则迁移到其他异步 API 时，可以分两层检查：
 
 1. task 是否拥有它实际存储的值，还是在接口内部悄悄保存了 caller 的 reference；
 2. 若存储值本身是 reference、view、pointer、`[&]` 或 `[this]` lambda，它指向的对象是否覆盖整个执行期，并在存在并发访问时正确同步。
@@ -785,8 +613,8 @@ future.wait()/get()    ──► test 等待确定的完成条件
 
 | 场景 | 核心不变量 | 常见错误 | 详见 |
 |---|---|---|---|
-| 提交异步任务 | task 默认拥有按值保存的 callable 与 arguments，但不自动拥有其中借用的对象 | 隐式保存 reference，或让 `[this]`、view、pointer 指向短命对象 | 1.1、2.4～2.7 |
-| 返回结果与异常 | `packaged_task` 与 future 共享结果状态；`get()` 读取一次结果 | 丢弃 future、重复 `get()`，或让 task exception 逃出 thread entry | 2.9、2.10、5.2 |
+| 提交异步任务 | task 默认拥有按值保存的 callable 与 arguments，但不自动拥有其中借用的对象 | 隐式保存 reference，或让 `[this]`、view、pointer 指向短命对象 | 1.1、2.2～2.3 |
+| 返回结果与异常 | `packaged_task` 与 future 共享结果状态；`get()` 读取一次结果 | 丢弃 future、重复 `get()`，或让 task exception 逃出 thread entry | 2.4、2.5、5.2 |
 | 保护共享状态 | 同一 mutex 保护相关状态；wait 始终重新检查 predicate | 把 notification 当成状态，或只换成 atomic 就认为安全 | 3.2～3.4、3.9 |
 | 执行 user code | queue 操作在锁内，task 执行在锁外 | 持有内部 lock 执行未知代码 | 3.5、3.6 |
 | 接受任务与关闭 | 检查 `accepting_` 与 enqueue 共用一个 linearization point | shutdown 开始后仍让 task 进入 queue | 3.7 |
@@ -796,7 +624,7 @@ future.wait()/get()    ──► test 等待确定的完成条件
 
 ## 9. 自检问题
 
-1. 为什么 `F&&` 在 `Submit()` 中是 forwarding reference，而 `Widget&&` 通常不是？
+1. `Submit()` 接收左值 callable 时，为什么任务里通常保存的是它的副本？
 2. `std::decay_t` 让任务默认拥有什么？它为什么不能修复 lambda 的 reference capture？
 3. 为什么 `std::ref` 既有用又危险？
 4. `std::packaged_task<void()>` 隐藏了什么，又保留了什么？

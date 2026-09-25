@@ -33,7 +33,8 @@ target_link_libraries(my_app PRIVATE waystone::basic_thread_pool)
 ## API 与所有权
 
 - `BasicThreadPool(worker_count)` 启动固定数量的 workers；数量为零时抛出 `std::invalid_argument`。线程池不可复制、不可移动。
-- `Submit(F&&, Args&&...)` 保存 callable 和参数，并返回结果 future。支持 move-only callable 与参数；需要保留引用语义时使用 `std::ref`。
+- `Submit(F&&, Args&&...)` 默认按值保存 callable 和普通参数（可复制的左值会复制，右值可移动时会移动），并返回结果 future。执行时，保存的 callable 与普通值参数作为右值参与调用：即使 `c` 是左值，`Submit(c, ...)` 也可能在 `c` 的副本上选中 `operator() &&`。支持 move-only callable 与参数。若要借用原对象并以左值调用，可传 `std::ref(c)`；调用者须保证借用对象活到任务结束，并同步并发访问。
+- 要选择带 ref 限定的重载，还需决定任务调用哪个对象：若要在自有副本上调用 `operator() &`，可提交一个 `mutable` lambda，在内部调用其具名的值捕获成员；若要调用 `operator() &&`，传 `c` 会先复制，传 `std::move(c)` 会先移动，然后以右值调用保存的对象。用法见[线程池笔记](../../docs/notes/basic_thread_pool.md)。
 - 任务返回值或异常由 future 交付；任务抛出异常不会终止 worker。
 - `Shutdown()` 停止接收新任务、执行完所有已接受任务并 join workers。多个外部线程可安全地并发调用，且重复调用无副作用。shutdown 开始后提交会立即抛出 `std::runtime_error`。
 - 若尚未完成 shutdown，析构会执行同样的 drain shutdown。
